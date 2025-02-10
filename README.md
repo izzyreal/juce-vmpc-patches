@@ -23,3 +23,13 @@ Two fixes for iOS in a single patch:
 See https://forum.juce.com/t/blank-white-screen-after-plugin-was-closed-and-opened-again/59281/20
 
 The fix is taken from a later JUCE (I think JUCE 8, but not sure) AUv3 wrapper.
+
+## `auv2_aumu_default_bus_layout_in_order_to_support_mixed_mono_and_stereo_outputs.patch`
+
+Use default (non-explicit) AUv2 bus layout if the AUv2 is an aumu (music device).
+
+This allows VMPC2000XL to be used in Logic with:
+1. 1x stereo in, 1x stereo out.
+2. 1x stereo in, 5x stereo out, 8x mono out.
+
+Also see https://github.com/juce-framework/JUCE/issues/1508

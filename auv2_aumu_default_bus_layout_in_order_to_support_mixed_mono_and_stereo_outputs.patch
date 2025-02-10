@@ -1,0 +1,40 @@
+diff --git a/modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm b/modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm
+index 9f5c44c789..87b7965152 100644
+--- a/modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm
++++ b/modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm
+@@ -355,6 +355,19 @@ OSStatus SetBusCount (AudioUnitScope scope, UInt32 count) override
+ 
+     UInt32 SupportedNumChannels (const AUChannelInfo** outInfo) override
+     {
++        const auto isMusicDevice = GetComponentDescription().componentType == kAudioUnitType_MusicDevice;
++
++        if (isMusicDevice)
++        {
++            // See https://github.com/juce-framework/JUCE/issues/1508
++            // We only do this for the aumu (music device) case.
++            // The aumf (music effect) needs an actual implementation, or, in auval terminology,
++            // provide an "explicit" layout.
++            // I suspect we could alternatively pass different bus counts into the MusicDeviceBase
++            // constructor, but implementing SupportedNumChannels a bit differently is easier.
++            return 0;
++        }
++
+         if (outInfo != nullptr)
+             *outInfo = channelInfo.getRawDataPointer();
+ 
+@@ -918,6 +931,7 @@ UInt32 GetAudioChannelLayout (AudioUnitScope scope,
+         return sizeInBytes;
+     }
+ 
++    /* Removed by Izmar. See https://github.com/juce-framework/JUCE/issues/1508
+     std::vector<AudioChannelLayoutTag> GetChannelLayoutTags (AudioUnitScope inScope, AudioUnitElement inElement) override
+     {
+         const auto info = getElementInfo (inScope, inElement);
+@@ -930,6 +944,7 @@ UInt32 GetAudioChannelLayout (AudioUnitScope scope,
+ 
+         return getSupportedBusLayouts (info.isInput, info.busNr);
+     }
++    */
+ 
+     OSStatus SetAudioChannelLayout (AudioUnitScope scope, AudioUnitElement element, const AudioChannelLayout* inLayout) override
+     {
