@@ -1,53 +1,8 @@
 diff --git a/modules/juce_audio_devices/native/juce_Audio_ios.cpp b/modules/juce_audio_devices/native/juce_Audio_ios.cpp
-index 67a4cb7520..709777cec0 100644
+index 87a33d7645..f8286b54bb 100644
 --- a/modules/juce_audio_devices/native/juce_Audio_ios.cpp
 +++ b/modules/juce_audio_devices/native/juce_Audio_ios.cpp
-@@ -1,21 +1,33 @@
- /*
-   ==============================================================================
- 
--   This file is part of the JUCE library.
--   Copyright (c) 2022 - Raw Material Software Limited
-+   This file is part of the JUCE framework.
-+   Copyright (c) Raw Material Software Limited
- 
--   JUCE is an open source library subject to commercial or open-source
-+   JUCE is an open source framework subject to commercial or open source
-    licensing.
- 
--   The code included in this file is provided under the terms of the ISC license
--   http://www.isc.org/downloads/software-support-policy/isc-license. Permission
--   To use, copy, modify, and/or distribute this software for any purpose with or
--   without fee is hereby granted provided that the above copyright notice and
--   this permission notice appear in all copies.
-+   By downloading, installing, or using the JUCE framework, or combining the
-+   JUCE framework with any other source code, object code, content or any other
-+   copyrightable work, you agree to the terms of the JUCE End User Licence
-+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
-+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
-+   do not agree to the terms of these agreements, we will not license the JUCE
-+   framework to you, and you must discontinue the installation or download
-+   process and cease use of the JUCE framework.
- 
--   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
--   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
--   DISCLAIMED.
-+   JUCE End User Licence Agreement: https://juce.com/legal/juce-8-licence/
-+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
-+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
-+
-+   Or:
-+
-+   You may also use this code under the terms of the AGPLv3:
-+   https://www.gnu.org/licenses/agpl-3.0.en.html
-+
-+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
-+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
-+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
- 
-   ==============================================================================
- */
-@@ -245,6 +257,81 @@ private:
+@@ -245,6 +245,81 @@ private:
      JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (iOSAudioIODeviceType)
  };
  
@@ -129,26 +84,22 @@ index 67a4cb7520..709777cec0 100644
  //==============================================================================
  struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
  {
-@@ -284,14 +371,10 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
- 
+@@ -285,11 +360,13 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
          if (category == AVAudioSessionCategoryPlayAndRecord)
          {
--            options |= (AVAudioSessionCategoryOptionDefaultToSpeaker
--                      /*| AVAudioSessionCategoryOptionAllowBluetooth */);
--
--            if (@available (iOS 14.5, *))
--                options |= AVAudioSessionCategoryOptionOverrideMutedMicrophoneInterruption;
--
--            if (@available (iOS 10.0, *))
--                options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
-+            options |= AVAudioSessionCategoryOptionDefaultToSpeaker
-+                     | AVAudioSessionCategoryOptionAllowBluetooth
-+                     | AVAudioSessionCategoryOptionAllowAirPlay
-+                     | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+             options |= AVAudioSessionCategoryOptionDefaultToSpeaker
+-                     | AVAudioSessionCategoryOptionAllowBluetooth
+                      | AVAudioSessionCategoryOptionAllowAirPlay;
+ 
+             if (@available (iOS 10.0, *))
+                 options |= AVAudioSessionCategoryOptionAllowBluetoothA2DP;
++            
++            if (@available (iOS 14.5, *))
++                options |= AVAudioSessionCategoryOptionOverrideMutedMicrophoneInterruption;
          }
  
          JUCE_NSERROR_CHECK ([[AVAudioSession sharedInstance] setCategory: category
-@@ -303,6 +386,16 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
+@@ -301,6 +378,16 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
      {
          JUCE_NSERROR_CHECK ([[AVAudioSession sharedInstance] setActive: enabled
                                                                   error: &error]);
@@ -165,7 +116,7 @@ index 67a4cb7520..709777cec0 100644
      }
  
      int getBufferSize (const double currentSampleRate)
-@@ -312,11 +405,32 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
+@@ -310,34 +397,63 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
  
      int tryBufferSize (const double currentSampleRate, const int newBufferSize)
      {
@@ -201,7 +152,9 @@ index 67a4cb7520..709777cec0 100644
  
          return getBufferSize (currentSampleRate);
      }
-@@ -325,21 +439,29 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
+-
++    
+     void updateAvailableBufferSizes()
      {
          availableBufferSizes.clear();
  
@@ -227,13 +180,13 @@ index 67a4cb7520..709777cec0 100644
 -        // Sometimes the largest supported buffer size is not a power of 2
 -        availableBufferSizes.addIfNotAlreadyThere (longestBufferSize);
 +            bufferSize = tryBufferSize (sampleRate, bufferSize);
-+
+ 
+-        bufferSize = tryBufferSize (sampleRate, bufferSize);
 +            return std::tuple (min, max);
 +        });
 +
 +        jassert (minBufSize > 0);
- 
--        bufferSize = tryBufferSize (sampleRate, bufferSize);
++
 +        for (auto i = minBufSize; i <= maxBufSize; i *= 2)
 +            availableBufferSizes.add (i);
 +
@@ -242,72 +195,3 @@ index 67a4cb7520..709777cec0 100644
  
         #if JUCE_IOS_AUDIO_LOGGING
          {
-@@ -358,9 +480,7 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
-     double trySampleRate (double rate)
-     {
-         auto session = [AVAudioSession sharedInstance];
--        JUCE_NSERROR_CHECK ([session setPreferredSampleRate: rate
--                                                      error: &error]);
--
-+        JUCE_NSERROR_CHECK ([session setPreferredSampleRate: rate error: &error]);
-         return session.sampleRate;
-     }
- 
-@@ -398,9 +518,9 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
- 
-         availableSampleRates.addIfNotAlreadyThere (highestRate);
- 
--        // Restore the original values.
-+        // Reset sample rate back to the original, so that we don't end up stuck on the highest rate
-         sampleRate = trySampleRate (sampleRate);
--        bufferSize = tryBufferSize (sampleRate, bufferSize);
-+        bufferSize = getBufferSize (sampleRate);
- 
-         AudioUnitAddPropertyListener (audioUnit,
-                                       kAudioUnitProperty_StreamFormat,
-@@ -729,18 +849,9 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
-                                              &dataSize);
-         if (err == noErr)
-         {
--            if (@available (iOS 10.0, *))
--            {
--                [[UIApplication sharedApplication] openURL: (NSURL*) hostUrl
--                                                   options: @{}
--                                         completionHandler: nil];
--
--                return;
--            }
--
--            JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wdeprecated-declarations")
--            [[UIApplication sharedApplication] openURL: (NSURL*) hostUrl];
--            JUCE_END_IGNORE_WARNINGS_GCC_LIKE
-+            [[UIApplication sharedApplication] openURL: (NSURL*) hostUrl
-+                                               options: @{}
-+                                     completionHandler: nil];
-         }
-     }
- 
-@@ -1122,9 +1233,6 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
-     {
-         const ScopedLock sl (callbackLock);
- 
--        updateHardwareInfo();
--        setTargetSampleRateAndBufferSize();
--
-         if (isRunning)
-         {
-             if (audioUnit != nullptr)
-@@ -1136,6 +1244,13 @@ struct iOSAudioIODevice::Pimpl final : public AsyncUpdater
-                     callback->audioDeviceStopped();
-             }
- 
-+        }
-+
-+        updateHardwareInfo();
-+        setTargetSampleRateAndBufferSize();
-+
-+        if (isRunning)
-+        {
-             channelData.reconfigure (requestedInputChannels, requestedOutputChannels);
- 
-             createAudioUnit();
