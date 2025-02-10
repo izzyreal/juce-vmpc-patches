@@ -18,6 +18,10 @@ Two fixes for iOS in a single patch:
 
 2. The `AVAudioSessionCategoryOptionOverrideMutedMicrophoneInterruption` patch is related to a privacy feature introduced in iOS 14.5, where the microphone is muted when closing the iPad's Smart Folio (magnetic) cover. If we don't pass `AVAudioSessionCategoryOptionOverrideMutedMicrophoneInterruption`, the audio stream will be interrupted when closing the cover. In JUCE this is not handled correctly, and the stream is bidirectionally interrupted, and it never recovers during the lifetime of the app. An app restart is needed to get `processBlock` calls again.
 
+## `ios_buffer_sizes.patch`
+
+There's an issue with JUCE 7.0.9 and certain iOS versions where, in a standalone build, only a single buffer size is available to the user. This patch updates `juce_Audio_ios.cpp` in its totality to the one found in a later version of JUCE (I forgot which one), where this issue is fixed.
+
 ## `ableton_live_editor_reopen.patch`
 
 See https://forum.juce.com/t/blank-white-screen-after-plugin-was-closed-and-opened-again/59281/20
