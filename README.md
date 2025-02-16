@@ -4,11 +4,10 @@ Some patches for JUCE that are used for https://github.com/izzyreal/vmpc-juce.
 
 I've applied them to my fork of JUCE 7.0.9 here: https://github.com/izzyreal/JUCE/tree/patched-for-ios-7.0.9
 
-## `auv3_inst_and_effect.patch` / `auv2_inst_and_effect.patch`
+## `auv2_auv3_inst_and_effect.patch`
 
 To publish VMPC2000XL AUv2 and AUv3 as instrument as well as effect. JUCE allows only one AU subtype, but we need two.
-
-**This patch is particularly dirty. With some effort the code could be made nice and organized, the subtypes parameterized, etc.**
+Some properties are hardcoded to make the code cleaner.
 
 ## `ios_audio.patch`
 
