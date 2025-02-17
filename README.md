@@ -2,7 +2,7 @@
 
 Some patches for JUCE that are used for https://github.com/izzyreal/vmpc-juce.
 
-I've applied them to my fork of JUCE 7.0.9 here: https://github.com/izzyreal/JUCE/tree/patched-for-ios-7.0.9
+I've applied them to my fork of JUCE 7.0.9 here: https://github.com/izzyreal/JUCE/tree/7.0.9-vmpc.
 
 ## `auv2_auv3_inst_and_effect.patch`
 
