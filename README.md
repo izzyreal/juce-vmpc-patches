@@ -9,6 +9,11 @@ I've applied them to my fork of JUCE 7.0.9 here: https://github.com/izzyreal/JUC
 To publish VMPC2000XL AUv2 and AUv3 as instrument as well as effect. JUCE allows only one AU subtype, but we need two.
 Some properties are hardcoded to make the code cleaner.
 
+## `auv2_auv3_expose_component_type.patch`
+
+A `std::string auComponentType` property is added to `juce::AudioProcessor`, which is immediately set in the AUv2 and AUv3 constructors to the component type, like `aumu`, `aumf`, etc.
+We do this, because in VMPC2000XL, in the About screen we want to include whether the user is running the AudioUnit as an instrument or as an effect.
+
 ## `ios_audio.patch`
 
 Three fixes for iOS in a single patch:

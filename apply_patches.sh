@@ -17,6 +17,7 @@ cd "$REPO_PATH" || exit 1
 
 for PATCH in \
     "auv2_auv3_inst_and_effect.patch" \
+    "auv2_auv3_expose_component_type.patch" \
     "auv2_aumu_default_bus_layout_in_order_to_support_mixed_mono_and_stereo_outputs.patch" \
     "auv3_aumu_default_bus_layout_in_order_to_support_mixed_mono_and_stereo_outputs.patch" \
     "ableton_live_editor_reopen.patch" \

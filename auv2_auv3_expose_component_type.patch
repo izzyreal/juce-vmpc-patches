@@ -1,0 +1,63 @@
+diff --git a/modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm b/modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm
+index 87b7965152..f0df2ab065 100644
+--- a/modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm
++++ b/modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm
+@@ -116,8 +116,25 @@
+                            (UInt32) AudioUnitHelpers::getBusCountForWrapper (*juceFilter, true),
+                            (UInt32) AudioUnitHelpers::getBusCountForWrapper (*juceFilter, false))
+     {
+-        inParameterChangedCallback = false;
++        const AudioComponent audioComponent = AudioComponentInstanceGetComponent(component);
++        AudioComponentDescription desc;
++        const OSStatus result = AudioComponentGetDescription(audioComponent, &desc);
++        
++        if (result == noErr)
++        {
++            const auto componentType = desc.componentType;
++            const std::string componentTypeStr {
++                static_cast<char>((componentType >> 24) & 0xFF),
++                static_cast<char>((componentType >> 16) & 0xFF),
++                static_cast<char>((componentType >> 8) & 0xFF),
++                static_cast<char>(componentType & 0xFF)
++            };
++            
++            juceFilter->auComponentType = componentTypeStr;
++        }
+ 
++        inParameterChangedCallback = false;
++                
+        #ifdef JucePlugin_PreferredChannelConfigurations
+         short configs[][2] = {JucePlugin_PreferredChannelConfigurations};
+         const int numConfigs = sizeof (configs) / sizeof (short[2]);
+diff --git a/modules/juce_audio_plugin_client/juce_audio_plugin_client_AUv3.mm b/modules/juce_audio_plugin_client/juce_audio_plugin_client_AUv3.mm
+index bd7b87a259..f01734d319 100644
+--- a/modules/juce_audio_plugin_client/juce_audio_plugin_client_AUv3.mm
++++ b/modules/juce_audio_plugin_client/juce_audio_plugin_client_AUv3.mm
+@@ -120,6 +120,14 @@ explicit AudioProcessorHolder (std::unique_ptr<AudioProcessor> p) : processor (s
+         JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+           processorHolder (processor)
+     {
++        const OSType componentType = descr.componentType;
++        const std::string componentTypeStr {
++            static_cast<char>((componentType >> 24) & 0xFF),
++            static_cast<char>((componentType >> 16) & 0xFF),
++            static_cast<char>((componentType >> 8) & 0xFF),
++            static_cast<char>(componentType & 0xFF)
++        };
++        processor->get()->auComponentType = componentTypeStr;
+         init();
+     }
+ 
+diff --git a/modules/juce_audio_processors/processors/juce_AudioProcessor.h b/modules/juce_audio_processors/processors/juce_AudioProcessor.h
+index aa9995c2e4..d8367fb3b9 100644
+--- a/modules/juce_audio_processors/processors/juce_AudioProcessor.h
++++ b/modules/juce_audio_processors/processors/juce_AudioProcessor.h
+@@ -73,6 +73,8 @@ protected:
+     }
+ 
+ public:
++    std::string auComponentType;
++
+     //==============================================================================
+     enum ProcessingPrecision
+     {
