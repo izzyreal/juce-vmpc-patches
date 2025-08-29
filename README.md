@@ -39,3 +39,9 @@ This allows VMPC2000XL to be used in Logic with:
 2. 1x stereo in, 5x stereo out, 8x mono out.
 
 Also see https://github.com/juce-framework/JUCE/issues/1508
+
+## `macos_do_not_use_CGWindowListCreateImage.patch`
+
+`CGWindowListCreateImage` doesn't build against the macOS 15 SDK. This function is used in JUCE 7 for creating screenshots, which is something we don't need in VMPC2000XL. This patch eliminates usage of `CGWindowListCreateImage` by returning an empty `juce::Image`.
+
+See https://github.com/izzyreal/vmpc-juce/issues/125
