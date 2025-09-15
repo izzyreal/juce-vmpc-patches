@@ -22,7 +22,8 @@ for PATCH in \
     "auv3_aumu_default_bus_layout_in_order_to_support_mixed_mono_and_stereo_outputs.patch" \
     "ableton_live_editor_reopen.patch" \
     "ios_audio.patch" \
-    "macos_do_not_use_CGWindowListCreateImage.patch"
+    "macos_do_not_use_CGWindowListCreateImage.patch" \
+    "juce8_AudioDeviceSelectorComponent.patch"
 do
     if [ ! -f "$PATCH_PATH/$PATCH" ]; then
         echo "Error: Patch '$PATCH' not found."

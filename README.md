@@ -45,3 +45,7 @@ Also see https://github.com/juce-framework/JUCE/issues/1508
 `CGWindowListCreateImage` doesn't build against the macOS 15 SDK. This function is used in JUCE 7 for creating screenshots, which is something we don't need in VMPC2000XL. This patch eliminates usage of `CGWindowListCreateImage` by returning an empty `juce::Image`.
 
 See https://github.com/izzyreal/vmpc-juce/issues/125
+
+## `juce8_AudioDeviceSelectorComponent.patch`
+
+Grabbed from JUCE 8.0.6 (as in, tag `8.0.6`). There was an issue where an incorrect output device would suddenly be selected after the user made a change to the selected input device. See https://github.com/izzyreal/vmpc-juce/issues/137. The updated version of `AudioDeviceSelectorComponent` doesn't suffer from this issue anymore.
