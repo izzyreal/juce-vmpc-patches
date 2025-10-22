@@ -1,0 +1,15 @@
+diff --git a/modules/juce_gui_extra/misc/juce_PushNotifications.h b/modules/juce_gui_extra/misc/juce_PushNotifications.h
+index 384b43abf..6fd4eb890 100644
+--- a/modules/juce_gui_extra/misc/juce_PushNotifications.h
++++ b/modules/juce_gui_extra/misc/juce_PushNotifications.h
+@@ -25,6 +25,10 @@
+ 
+ #pragma once
+ 
++#if JUCE_WINDOWS && defined(small)
++#undef small
++#endif
++
+ namespace juce
+ {
+ 

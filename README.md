@@ -49,3 +49,7 @@ See https://github.com/izzyreal/vmpc-juce/issues/125
 ## `juce8_AudioDeviceSelectorComponent.patch`
 
 Grabbed from JUCE 8.0.6 (as in, tag `8.0.6`). There was an issue where an incorrect output device would suddenly be selected after the user made a change to the selected input device. See https://github.com/izzyreal/vmpc-juce/issues/137. The updated version of `AudioDeviceSelectorComponent` doesn't suffer from this issue anymore.
+
+## `juce_pushnotifications_windows.patch`
+
+See https://forum.juce.com/t/windows-juce-8-0-6-builds-issues-juce-pushnotifications-h/65317
