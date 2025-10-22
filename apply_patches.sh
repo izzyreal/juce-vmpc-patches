@@ -23,7 +23,8 @@ for PATCH in \
     "ableton_live_editor_reopen.patch" \
     "ios_audio.patch" \
     "macos_do_not_use_CGWindowListCreateImage.patch" \
-    "juce8_AudioDeviceSelectorComponent.patch"
+    "juce8_AudioDeviceSelectorComponent.patch" \
+    "juce_cmake_utils.patch"
 do
     if [ ! -f "$PATCH_PATH/$PATCH" ]; then
         echo "Error: Patch '$PATCH' not found."
