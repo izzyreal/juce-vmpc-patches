@@ -53,3 +53,8 @@ Grabbed from JUCE 8.0.6 (as in, tag `8.0.6`). There was an issue where an incorr
 ## `juce_pushnotifications_windows.patch`
 
 See https://forum.juce.com/t/windows-juce-8-0-6-builds-issues-juce-pushnotifications-h/65317
+
+## `raw_keyboard_macos.patch` and `raw_keyboard_macos_mod_synthesis.patch`
+
+Propagate raw keycodes on macOS only. No native Windows, Linux or iOS code is touched by these patches. Added for Renoise and Ardour, because they don't allow https://github.com/izzyreal/juce-raw-keyboard-input-module. In the case of Renoise, it allows the raw keyboard input module's modifier monitor, but not the normal key down/up monitor. With Ardour, all monitoring is blocked. Since on macOS modifier keys do not come as separate events, we synthesise and emit them ourselves in several relevant places: before propagating a non-mod key-down/up, and before propagating mouse events.
+Note that the mod synthesis patch depends on `raw_keyboard_macos.patch`.

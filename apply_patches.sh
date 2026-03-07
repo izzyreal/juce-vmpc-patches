@@ -25,7 +25,9 @@ for PATCH in \
     "macos_do_not_use_CGWindowListCreateImage.patch" \
     "juce8_AudioDeviceSelectorComponent.patch" \
     "juce_cmake_utils.patch" \
-    "juce_pushnotifications_windows.patch"
+    "juce_pushnotifications_windows.patch" \
+    "raw_keyboard_macos.patch" \
+    "raw_keyboard_macos_mod_synthesis.patch"
 do
     if [ ! -f "$PATCH_PATH/$PATCH" ]; then
         echo "Error: Patch '$PATCH' not found."

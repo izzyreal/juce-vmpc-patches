@@ -1,0 +1,114 @@
+diff --git a/modules/juce_gui_basics/juce_gui_basics.h b/modules/juce_gui_basics/juce_gui_basics.h
+index a9529417fb..94a3e8bd4d 100644
+--- a/modules/juce_gui_basics/juce_gui_basics.h
++++ b/modules/juce_gui_basics/juce_gui_basics.h
+@@ -188,6 +188,7 @@ namespace juce
+ #include "mouse/juce_MouseInputSource.h"
+ #include "mouse/juce_MouseEvent.h"
+ #include "keyboard/juce_KeyPress.h"
++#include "keyboard/juce_RawKeyEvent.hpp"
+ #include "keyboard/juce_KeyListener.h"
+ #include "components/juce_ComponentTraverser.h"
+ #include "components/juce_FocusTraverser.h"
+diff --git a/modules/juce_gui_basics/keyboard/juce_RawKeyEvent.hpp b/modules/juce_gui_basics/keyboard/juce_RawKeyEvent.hpp
+new file mode 100644
+index 0000000000..a579d0c655
+--- /dev/null
++++ b/modules/juce_gui_basics/keyboard/juce_RawKeyEvent.hpp
+@@ -0,0 +1,16 @@
++#pragma once
++
++namespace juce
++{
++    struct JUCE_API RawKeyEvent
++    {
++        int keyCode;
++        bool keyDown;
++    };
++
++    class JUCE_API RawKeyEventSink
++    {
++    public:
++        virtual void handleRawKeyEvent(const RawKeyEvent &) = 0;
++    };
++} // namespace juce
+\ No newline at end of file
+diff --git a/modules/juce_gui_basics/native/juce_NSViewComponentPeer_mac.mm b/modules/juce_gui_basics/native/juce_NSViewComponentPeer_mac.mm
+index c35b78ac28..8e95d196ed 100644
+--- a/modules/juce_gui_basics/native/juce_NSViewComponentPeer_mac.mm
++++ b/modules/juce_gui_basics/native/juce_NSViewComponentPeer_mac.mm
+@@ -2189,7 +2189,10 @@ struct JuceNSViewClass final : public NSViewComponentPeerWrapper<ObjCClass<NSVie
+             const auto handled = [&]
+             {
+                 if (auto* owner = getOwner (self))
+-                    return owner->sendEventToInputContextOrComponent (ev);
++                {
++                    owner->handleRawKeyEvent(RawKeyEvent{[ev keyCode], true});
++                    return owner->sendEventToInputContextOrComponent(ev);
++                }
+ 
+                 return false;
+             }();
+@@ -2201,7 +2204,7 @@ struct JuceNSViewClass final : public NSViewComponentPeerWrapper<ObjCClass<NSVie
+         addMethod (@selector (keyUp:), [] (id self, SEL, NSEvent* ev)
+         {
+             auto* owner = getOwner (self);
+-
++            owner->handleRawKeyEvent(RawKeyEvent{[ev keyCode], false});
+             if (! owner->redirectKeyUp (ev))
+                 sendSuperclassMessage<void> (self, @selector (keyUp:), ev);
+         });
+diff --git a/modules/juce_gui_basics/windows/juce_ComponentPeer.cpp b/modules/juce_gui_basics/windows/juce_ComponentPeer.cpp
+index 0bd3784ed1..b903b37efc 100644
+--- a/modules/juce_gui_basics/windows/juce_ComponentPeer.cpp
++++ b/modules/juce_gui_basics/windows/juce_ComponentPeer.cpp
+@@ -611,4 +611,36 @@ void ComponentPeer::globalFocusChanged ([[maybe_unused]] Component* comp)
+     refreshTextInputTarget();
+ }
+ 
++template<class ComponentClass>
++static ComponentClass* findChildComponentOfClass(Component* parent)
++{
++    for (int i = 0; i < parent->getNumChildComponents(); ++i)
++    {
++        auto* childComp = parent->getChildComponent(i);
++
++        if (auto c = dynamic_cast<ComponentClass*> (childComp))
++            return c;
++
++        if (auto c = findChildComponentOfClass<ComponentClass> (childComp))
++            return c;
++    }
++
++    return nullptr;
++}
++
++void ComponentPeer::handleRawKeyEvent (const RawKeyEvent& keyEvent)
++{
++    auto rawKeyEventSink = component.findParentComponentOfClass<RawKeyEventSink>();
++
++    if (rawKeyEventSink == nullptr)
++    {
++        rawKeyEventSink = findChildComponentOfClass<RawKeyEventSink>(&component);
++    }
++
++    if (rawKeyEventSink != nullptr)
++    {
++        rawKeyEventSink->handleRawKeyEvent(keyEvent);
++    }
++}
++
+ } // namespace juce
+diff --git a/modules/juce_gui_basics/windows/juce_ComponentPeer.h b/modules/juce_gui_basics/windows/juce_ComponentPeer.h
+index 0fc704e3e6..19ed2d9f7e 100644
+--- a/modules/juce_gui_basics/windows/juce_ComponentPeer.h
++++ b/modules/juce_gui_basics/windows/juce_ComponentPeer.h
+@@ -347,6 +347,8 @@ public:
+ 
+     Component* getLastFocusedSubcomponent() const noexcept;
+ 
++    void handleRawKeyEvent (const RawKeyEvent& keyEvent);
++
+     /** Called when a key is pressed.
+         For keycode info, see the KeyPress class.
+         Returns true if the keystroke was used.
