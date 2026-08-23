@@ -27,7 +27,8 @@ for PATCH in \
     "juce_cmake_utils.patch" \
     "juce_pushnotifications_windows.patch" \
     "raw_keyboard_macos.patch" \
-    "raw_keyboard_macos_mod_synthesis.patch"
+    "raw_keyboard_macos_mod_synthesis.patch" \
+    "android_safe_area.patch"
 do
     if [ ! -f "$PATCH_PATH/$PATCH" ]; then
         echo "Error: Patch '$PATCH' not found."

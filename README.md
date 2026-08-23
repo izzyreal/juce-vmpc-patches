@@ -60,3 +60,13 @@ See https://forum.juce.com/t/windows-juce-8-0-6-builds-issues-juce-pushnotificat
 
 Propagate raw keycodes on macOS only. No native Windows, Linux or iOS code is touched by these patches. Added for Renoise and Ardour, because they don't allow https://github.com/izzyreal/juce-raw-keyboard-input-module. In the case of Renoise, it allows the raw keyboard input module's modifier monitor, but not the normal key down/up monitor. With Ardour, all monitoring is blocked. Since on macOS modifier keys do not come as separate events, we synthesise and emit them ourselves in several relevant places: before propagating a non-mod key-down/up, and before propagating mouse events.
 Note that the mod synthesis patch depends on `raw_keyboard_macos.patch`.
+
+## `android_safe_area.patch`
+
+A minimal backport of the Android safe-area reporting improvements from JUCE commit
+[`f904fd356ac821e4e03db548ac41ba984f51c45c`](https://github.com/juce-framework/JUCE/commit/f904fd356ac821e4e03db548ac41ba984f51c45c).
+It makes `Display::safeAreaInsets` account for system bars and display cutouts, reports
+keyboard insets separately, and listens for inset changes on the activity's decor view.
+
+This intentionally includes only the native JNI/windowing changes needed by VMPC2000XL
+and excludes the upstream commit's broader Java edge-to-edge and system-bar rewrite.
