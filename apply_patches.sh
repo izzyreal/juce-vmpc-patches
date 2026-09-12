@@ -28,7 +28,8 @@ for PATCH in \
     "juce_pushnotifications_windows.patch" \
     "raw_keyboard_macos.patch" \
     "raw_keyboard_macos_mod_synthesis.patch" \
-    "android_safe_area.patch"
+    "android_safe_area.patch" \
+    "linux_touch.patch"
 do
     if [ ! -f "$PATCH_PATH/$PATCH" ]; then
         echo "Error: Patch '$PATCH' not found."

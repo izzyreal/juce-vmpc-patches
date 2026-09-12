@@ -70,3 +70,37 @@ keyboard insets separately, and listens for inset changes on the activity's deco
 
 This intentionally includes only the native JNI/windowing changes needed by VMPC2000XL
 and excludes the upstream commit's broader Java edge-to-edge and system-bar rewrite.
+
+## `linux_touch.patch`
+
+Backports XInput 2.2 touchscreen support to JUCE 7.0.9, using upstream commits
+[`032a1f433b8e24da0a539ab344d6e13279a2a3f8`](https://github.com/juce-framework/JUCE/commit/032a1f433b8e24da0a539ab344d6e13279a2a3f8)
+and [`55b2f9cf66d08d762b6c79c30253e90ab1f9a0e7`](https://github.com/juce-framework/JUCE/commit/55b2f9cf66d08d762b6c79c30253e90ab1f9a0e7).
+
+Multiple contacts become independent JUCE touch input sources. XI mouse events
+replace core pointer events while XInput is active to avoid duplicate clicks from
+touch emulation. Device subscriptions are refreshed on hierarchy changes and
+contacts are removed from the mapper when their window is destroyed.
+
+The implementation lives inside `juce_gui_basics`, with XInput logic extracted to
+`native/juce_XInput_linux.h` and `.cpp`. There is no additional module. Adaptations
+retain JUCE 7's existing mouse-button support and C++17 helpers, decode generic
+cookies before interpreting their union as a window event, and propagate keyboard
+modifiers to touch callbacks. The native window-system header includes its own
+XInput dependency so the raw-keyboard module can continue including it directly.
+The two extracted files retain upstream notices.
+The only test access is a friend declaration guarded by `JUCE_UNIT_TESTS`.
+
+`JUCE_USE_XINPUT` defaults to `1`. Linux builds, including Linux-hosted juceaide,
+need `libxi-dev`; install it in CI/build images before using this fork. Runtime
+loading uses `libXi.so.6`; absent or unsupported XInput falls back to ordinary X11
+mouse input. Define `JUCE_USE_XINPUT=0` for all JUCE compilation, including host
+tools, to build without XInput headers. It is a preprocessor definition, not a
+JUCE CMake option.
+
+This targets JUCE's X11 backend. XWayland depends on compositor/device support;
+this does not add native Wayland, trackpad gesture recognition, or independent
+mouse pointers. Existing Windows and mobile backends are unchanged.
+
+See [Linux touch verification](tests/linux-touch/README.md) for the reproducible
+harness, Apple Container setup, fallback checks, and hardware acceptance list.

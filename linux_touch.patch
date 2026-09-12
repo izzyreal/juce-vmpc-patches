@@ -1,0 +1,906 @@
+diff --git a/modules/juce_gui_basics/juce_gui_basics.cpp b/modules/juce_gui_basics/juce_gui_basics.cpp
+index 518f39397..d3c4c26dc 100644
+--- a/modules/juce_gui_basics/juce_gui_basics.cpp
++++ b/modules/juce_gui_basics/juce_gui_basics.cpp
+@@ -128,7 +128,7 @@
+ #include "detail/juce_TopLevelWindowManager.h"
+ 
+ //==============================================================================
+-#if JUCE_IOS || JUCE_WINDOWS
++#if JUCE_IOS || JUCE_WINDOWS || JUCE_LINUX || JUCE_BSD
+  #include "native/juce_MultiTouchMapper.h"
+ #endif
+ 
+@@ -193,9 +193,11 @@
+ 
+  #include "native/juce_ScopedWindowAssociation_linux.h"
+  #include "native/juce_WindowUtils_linux.cpp"
++ #include "native/juce_XInput_linux.h"
+  #include "native/juce_Windowing_linux.cpp"
+  #include "native/juce_NativeMessageBox_linux.cpp"
+  #include "native/juce_XWindowSystem_linux.cpp"
++ #include "native/juce_XInput_linux.cpp"
+ 
+  JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+ 
+diff --git a/modules/juce_gui_basics/juce_gui_basics.h b/modules/juce_gui_basics/juce_gui_basics.h
+index 94a3e8bd4..5d3bd1b2b 100644
+--- a/modules/juce_gui_basics/juce_gui_basics.h
++++ b/modules/juce_gui_basics/juce_gui_basics.h
+@@ -114,6 +114,16 @@
+  #define JUCE_USE_XCURSOR 1
+ #endif
+ 
++/** Config: JUCE_USE_XINPUT
++    Uses XInput (v2.2+) to allow multitouch on Linux. This is best left turned on unless you
++    have a good reason to disable it.
++    The availability of XInput v2.2+ is queried at runtime so your users do not need to have
++    XInput installed for your JUCE app to run.
++*/
++#ifndef JUCE_USE_XINPUT
++ #define JUCE_USE_XINPUT 1
++#endif
++
+ /** Config: JUCE_WIN_PER_MONITOR_DPI_AWARE
+     Enables per-monitor DPI awareness on Windows 8.1 and above.
+ */
+diff --git a/modules/juce_gui_basics/native/juce_Windowing_linux.cpp b/modules/juce_gui_basics/native/juce_Windowing_linux.cpp
+index 9f4b8aa79..d78d30905 100644
+--- a/modules/juce_gui_basics/native/juce_Windowing_linux.cpp
++++ b/modules/juce_gui_basics/native/juce_Windowing_linux.cpp
+@@ -38,7 +38,7 @@ public:
+         // it's dangerous to create a window on a thread other than the message thread.
+         JUCE_ASSERT_MESSAGE_MANAGER_IS_LOCKED
+ 
+-        const auto* instance = XWindowSystem::getInstance();
++        auto* instance = XWindowSystem::getInstance();
+ 
+         if (! instance->isX11Available())
+             return;
+@@ -719,9 +719,12 @@ void Desktop::allowedOrientationsChanged()                          {}
+ //==============================================================================
+ bool detail::MouseInputSourceList::addSource()
+ {
+-    if (sources.isEmpty())
++    auto numSources = sources.size();
++
++    if (numSources == 0 || canUseTouch())
+     {
+-        addSource (0, MouseInputSource::InputSourceType::mouse);
++        addSource (numSources, numSources == 0 ? MouseInputSource::InputSourceType::mouse
++                                               : MouseInputSource::InputSourceType::touch);
+         return true;
+     }
+ 
+@@ -730,7 +733,7 @@ bool detail::MouseInputSourceList::addSource()
+ 
+ bool detail::MouseInputSourceList::canUseTouch() const
+ {
+-    return false;
++    return XWindowSystem::getInstance()->canUseMultiTouch();
+ }
+ 
+ Point<float> MouseInputSource::getCurrentRawMousePosition()
+diff --git a/modules/juce_gui_basics/native/juce_XSymbols_linux.cpp b/modules/juce_gui_basics/native/juce_XSymbols_linux.cpp
+index d800ab41e..09eabba20 100644
+--- a/modules/juce_gui_basics/native/juce_XSymbols_linux.cpp
++++ b/modules/juce_gui_basics/native/juce_XSymbols_linux.cpp
+@@ -120,12 +120,14 @@ bool X11Symbols::loadAllSymbols()
+                        makeSymbolBinding (xFree,                       "XFree"),
+                        makeSymbolBinding (xFreeCursor,                 "XFreeCursor"),
+                        makeSymbolBinding (xFreeColormap,               "XFreeColormap"),
++                       makeSymbolBinding (xFreeEventData,              "XFreeEventData"),
+                        makeSymbolBinding (xFreeGC,                     "XFreeGC"),
+                        makeSymbolBinding (xFreeModifiermap,            "XFreeModifiermap"),
+                        makeSymbolBinding (xFreePixmap,                 "XFreePixmap"),
+                        makeSymbolBinding (xGetAtomName,                "XGetAtomName"),
+                        makeSymbolBinding (xGetErrorDatabaseText,       "XGetErrorDatabaseText"),
+                        makeSymbolBinding (xGetErrorText,               "XGetErrorText"),
++                       makeSymbolBinding (xGetEventData,               "XGetEventData"),
+                        makeSymbolBinding (xGetGeometry,                "XGetGeometry"),
+                        makeSymbolBinding (xGetImage,                   "XGetImage"),
+                        makeSymbolBinding (xGetInputFocus,              "XGetInputFocus"),
+@@ -230,6 +232,13 @@ bool X11Symbols::loadAllSymbols()
+                  makeSymbolBinding (xShmPutImage,                "XShmPutImage"),
+                  makeSymbolBinding (xShmQueryVersion,            "XShmQueryVersion"));
+    #endif
++   #if JUCE_USE_XINPUT
++    loadSymbols (xinputLib,
++                 makeSymbolBinding (xiQueryVersion,              "XIQueryVersion"),
++                 makeSymbolBinding (xiQueryDevice,               "XIQueryDevice"),
++                 makeSymbolBinding (xiFreeDeviceInfo,            "XIFreeDeviceInfo"),
++                 makeSymbolBinding (xiSelectEvents,              "XISelectEvents"));
++   #endif
+ 
+     return true;
+ }
+diff --git a/modules/juce_gui_basics/native/juce_XSymbols_linux.h b/modules/juce_gui_basics/native/juce_XSymbols_linux.h
+index 31cfdd5e1..b5d88be1b 100644
+--- a/modules/juce_gui_basics/native/juce_XSymbols_linux.h
++++ b/modules/juce_gui_basics/native/juce_XSymbols_linux.h
+@@ -40,6 +40,10 @@ namespace ReturnHelpers
+     using functionName      = returnType (*) args; \
+     functionName objectName = [] args -> returnType  { return ReturnHelpers::returnDefaultConstructedAnyType<returnType>(); };
+ 
++#define JUCE_GENERATE_FUNCTION_WITH_DEFAULT_RESULT(functionName, objectName, args, returnType, defaultResult) \
++    using functionName      = returnType (*) args; \
++    functionName objectName = [] args -> returnType  { return defaultResult; };
++
+ 
+ //==============================================================================
+ class JUCE_API  X11Symbols
+@@ -209,6 +213,10 @@ public:
+                                          (::Display*, Colormap),
+                                          void)
+ 
++    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XFreeEventData, xFreeEventData,
++                                         (::Display*, XGenericEventCookie*),
++                                         void)
++
+     JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XFreeGC, xFreeGC,
+                                          (::Display*, GC),
+                                          void)
+@@ -233,6 +241,10 @@ public:
+                                          (::Display*, int, const char*, int),
+                                          void)
+ 
++    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XGetEventData, xGetEventData,
++                                         (::Display*, XGenericEventCookie*),
++                                         Bool)
++
+     JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XGetGeometry, xGetGeometry,
+                                          (::Display*, ::Drawable, ::Window*, int*, int*, unsigned int*, unsigned int*, unsigned int*, unsigned int*),
+                                          Status)
+@@ -301,6 +313,25 @@ public:
+                                          (::Display*, const char*, Bool),
+                                          Atom)
+ 
++   #if JUCE_USE_XINPUT
++    JUCE_GENERATE_FUNCTION_WITH_DEFAULT_RESULT (XIQueryVersion, xiQueryVersion,
++                                                (::Display*, int*, int*),
++                                                Status,
++                                                BadRequest)
++
++    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XIQueryDevice, xiQueryDevice,
++                                         (::Display*, int, int*),
++                                         XIDeviceInfo*)
++
++    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XIFreeDeviceInfo, xiFreeDeviceInfo,
++                                         (XIDeviceInfo*),
++                                         void)
++
++    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XISelectEvents, xiSelectEvents,
++                                         (::Display*, ::Window, XIEventMask*, int),
++                                         Status)
++   #endif
++
+     JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XkbKeycodeToKeysym, xkbKeycodeToKeysym,
+                                          (::Display*, KeyCode, unsigned int, unsigned int),
+                                          KeySym)
+@@ -612,6 +643,9 @@ private:
+    #if JUCE_USE_XRANDR
+     DynamicLibrary xrandrLib   { "libXrandr.so.2" };
+    #endif
++   #if JUCE_USE_XINPUT
++    DynamicLibrary xinputLib   { "libXi.so.6" };
++   #endif
+ 
+     //==============================================================================
+     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (X11Symbols)
+diff --git a/modules/juce_gui_basics/native/juce_XWindowSystem_linux.cpp b/modules/juce_gui_basics/native/juce_XWindowSystem_linux.cpp
+index 20cfe8087..4771cf2eb 100644
+--- a/modules/juce_gui_basics/native/juce_XWindowSystem_linux.cpp
++++ b/modules/juce_gui_basics/native/juce_XWindowSystem_linux.cpp
+@@ -1514,7 +1514,7 @@ static int getAllEventsMask (bool ignoresMouseClicks)
+              | (ignoresMouseClicks ? 0 : (ButtonPressMask | ButtonReleaseMask));
+ }
+ 
+-::Window XWindowSystem::createWindow (::Window parentToAddTo, LinuxComponentPeer* peer) const
++::Window XWindowSystem::createWindow (::Window parentToAddTo, LinuxComponentPeer* peer)
+ {
+     if (! xIsAvailable)
+     {
+@@ -1609,11 +1609,23 @@ static int getAllEventsMask (bool ignoresMouseClicks)
+     unsigned long info[2] = { 0, 1 };
+     xchangeProperty (windowH, atoms.XembedInfo, atoms.XembedInfo, 32, (unsigned char*) info, 2);
+ 
++    windowHandles.push_back (windowH);
++
++   #if JUCE_USE_XINPUT
++    XInputHelpers::registerForXI2Events (display, windowH);
++   #endif
++
+     return windowH;
+ }
+ 
+ void XWindowSystem::destroyWindow (::Window windowH)
+ {
++    if (auto it = std::find (windowHandles.begin(), windowHandles.end(), windowH);
++        it != windowHandles.end())
++    {
++        windowHandles.erase (it);
++    }
++
+     auto* peer = dynamic_cast<LinuxComponentPeer*> (getPeerFor (windowH));
+ 
+     if (peer == nullptr)
+@@ -1649,6 +1661,10 @@ void XWindowSystem::destroyWindow (::Window windowH)
+     if (XSHMHelpers::isShmAvailable (display))
+         shmPaintsPendingMap.erase (windowH);
+    #endif
++
++   #if JUCE_USE_XINPUT
++    XInputHelpers::deleteAllTouchesForPeer (peer);
++   #endif
+ }
+ 
+ //==============================================================================
+@@ -2149,6 +2165,15 @@ bool XWindowSystem::canUseARGBImages() const
+     return canUseARGB;
+ }
+ 
++bool XWindowSystem::canUseMultiTouch() const
++{
++   #if JUCE_USE_XINPUT
++    return XInputHelpers::setupXI2 (display).has_value();
++   #endif
++
++    return false;
++}
++
+ bool XWindowSystem::isDarkModeActive() const
+ {
+     const auto themeName = [this]() -> String
+@@ -3337,10 +3362,10 @@ void juce_deleteKeyProxyWindow (::Window keyProxy)
+ }
+ 
+ //==============================================================================
+-template <typename EventType>
+-static Point<float> getLogicalMousePos (const EventType& e, double scaleFactor) noexcept
++template <typename PosType>
++static Point<float> getLogicalMousePos (Point<PosType> pt, const LinuxComponentPeer& peer) noexcept
+ {
+-    return Point<float> ((float) e.x, (float) e.y) / scaleFactor;
++    return pt.toFloat() / peer.getPlatformScaleFactor();
+ }
+ 
+ static int64 getEventTime (::Time t)
+@@ -3354,12 +3379,6 @@ static int64 getEventTime (::Time t)
+     return eventTimeOffset + thisMessageTime;
+ }
+ 
+-template <typename EventType>
+-static int64 getEventTime (const EventType& t)
+-{
+-    return getEventTime (t.time);
+-}
+-
+ void XWindowSystem::handleWindowMessage (LinuxComponentPeer* peer, XEvent& event) const
+ {
+     switch (event.xany.type)
+@@ -3568,7 +3587,7 @@ void XWindowSystem::handleKeyReleaseEvent (LinuxComponentPeer* peer, const XKeyE
+     }
+ }
+ 
+-void XWindowSystem::handleWheelEvent (LinuxComponentPeer* peer, const XButtonPressedEvent& buttonPressEvent, float amount) const
++void XWindowSystem::handleWheelEvent (LinuxComponentPeer* peer, int64 eventTime, Point<float> logicalMousePos, float amount) const
+ {
+     MouseWheelDetails wheel;
+     wheel.deltaX = 0.0f;
+@@ -3577,55 +3596,65 @@ void XWindowSystem::handleWheelEvent (LinuxComponentPeer* peer, const XButtonPre
+     wheel.isSmooth = false;
+     wheel.isInertial = false;
+ 
+-    peer->handleMouseWheel (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (buttonPressEvent, peer->getPlatformScaleFactor()),
+-                            getEventTime (buttonPressEvent), wheel);
++    peer->handleMouseWheel (MouseInputSource::InputSourceType::mouse, logicalMousePos, eventTime, wheel);
+ }
+ 
+-void XWindowSystem::handleButtonPressEvent (LinuxComponentPeer* peer, const XButtonPressedEvent& buttonPressEvent, int buttonModifierFlag) const
++void XWindowSystem::handleButtonPressEvent (LinuxComponentPeer* peer, int64 eventTime, Point<float> logicalMousePos, int buttonModifierFlag) const
+ {
+-    ModifierKeys::currentModifiers = ModifierKeys::currentModifiers.withFlags (buttonModifierFlag);
++    ModifierKeys::currentModifiers = ModifierKeys::getCurrentModifiers().withFlags (buttonModifierFlag);
+     peer->toFront (true);
+-    peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (buttonPressEvent, peer->getPlatformScaleFactor()),
+-                            ModifierKeys::currentModifiers, MouseInputSource::defaultPressure,
+-                            MouseInputSource::defaultOrientation, getEventTime (buttonPressEvent), {});
++    peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, logicalMousePos,
++                            ModifierKeys::getCurrentModifiers(), MouseInputSource::defaultPressure,
++                            MouseInputSource::defaultOrientation, eventTime, {});
+ }
+ 
+-void XWindowSystem::handleButtonPressEvent (LinuxComponentPeer* peer, const XButtonPressedEvent& buttonPressEvent) const
++void XWindowSystem::handleButtonPressEvent (LinuxComponentPeer* peer, int state, int button, ::Time time, Point<double> pt) const
+ {
+-    updateKeyModifiers ((int) buttonPressEvent.state);
++    updateKeyModifiers (state);
+ 
+-    auto mapIndex = (uint32) (buttonPressEvent.button - Button1);
++    auto mapIndex = (uint32) (button - Button1);
+ 
+     if (mapIndex < (uint32) numElementsInArray (pointerMap))
+     {
++        const auto eventTime = getEventTime (time);
++        const auto eventPos = getLogicalMousePos (pt, *peer);
++
+         switch (pointerMap[mapIndex])
+         {
+-            case Keys::WheelUp:         handleWheelEvent (peer, buttonPressEvent,  50.0f / 256.0f); break;
+-            case Keys::WheelDown:       handleWheelEvent (peer, buttonPressEvent, -50.0f / 256.0f); break;
+-            case Keys::LeftButton:      handleButtonPressEvent (peer, buttonPressEvent, ModifierKeys::leftButtonModifier); break;
+-            case Keys::RightButton:     handleButtonPressEvent (peer, buttonPressEvent, ModifierKeys::rightButtonModifier); break;
+-            case Keys::MiddleButton:    handleButtonPressEvent (peer, buttonPressEvent, ModifierKeys::middleButtonModifier); break;
++            case Keys::WheelUp:         handleWheelEvent (peer, eventTime, eventPos,  50.0f / 256.0f); break;
++            case Keys::WheelDown:       handleWheelEvent (peer, eventTime, eventPos, -50.0f / 256.0f); break;
++            case Keys::LeftButton:      handleButtonPressEvent (peer, eventTime, eventPos, ModifierKeys::leftButtonModifier); break;
++            case Keys::RightButton:     handleButtonPressEvent (peer, eventTime, eventPos, ModifierKeys::rightButtonModifier); break;
++            case Keys::MiddleButton:    handleButtonPressEvent (peer, eventTime, eventPos, ModifierKeys::middleButtonModifier); break;
++
+             default: break;
+         }
+     }
+ }
+ 
+-void XWindowSystem::handleButtonReleaseEvent (LinuxComponentPeer* peer, const XButtonReleasedEvent& buttonRelEvent) const
++void XWindowSystem::handleButtonPressEvent (LinuxComponentPeer* peer, const XButtonPressedEvent& buttonPressEvent) const
++{
++    handleButtonPressEvent (peer, (int) buttonPressEvent.state, (int) buttonPressEvent.button, buttonPressEvent.time,
++                            Point { buttonPressEvent.x, buttonPressEvent.y }.toDouble());
++}
++
++void XWindowSystem::handleButtonReleaseEvent (LinuxComponentPeer* peer, int state, int button, ::Time time, Point<double> pt) const
+ {
+-    updateKeyModifiers ((int) buttonRelEvent.state);
++    updateKeyModifiers (state);
+ 
+     if (peer->getParentWindow() != 0)
+         peer->updateWindowBounds();
+ 
+-    auto mapIndex = (uint32) (buttonRelEvent.button - Button1);
++    auto mapIndex = (uint32) (button - Button1);
+ 
+     if (mapIndex < (uint32) numElementsInArray (pointerMap))
+     {
+         switch (pointerMap[mapIndex])
+         {
+-            case Keys::LeftButton:      ModifierKeys::currentModifiers = ModifierKeys::currentModifiers.withoutFlags (ModifierKeys::leftButtonModifier);   break;
+-            case Keys::RightButton:     ModifierKeys::currentModifiers = ModifierKeys::currentModifiers.withoutFlags (ModifierKeys::rightButtonModifier);  break;
+-            case Keys::MiddleButton:    ModifierKeys::currentModifiers = ModifierKeys::currentModifiers.withoutFlags (ModifierKeys::middleButtonModifier); break;
++            case Keys::LeftButton:      ModifierKeys::currentModifiers = ModifierKeys::getCurrentModifiers().withoutFlags (ModifierKeys::leftButtonModifier);    break;
++            case Keys::RightButton:     ModifierKeys::currentModifiers = ModifierKeys::getCurrentModifiers().withoutFlags (ModifierKeys::rightButtonModifier);   break;
++            case Keys::MiddleButton:    ModifierKeys::currentModifiers = ModifierKeys::getCurrentModifiers().withoutFlags (ModifierKeys::middleButtonModifier);  break;
++
+             default: break;
+         }
+     }
+@@ -3635,13 +3664,19 @@ void XWindowSystem::handleButtonReleaseEvent (LinuxComponentPeer* peer, const XB
+     if (dragState.isDragging())
+         dragState.handleExternalDragButtonReleaseEvent();
+ 
+-    peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (buttonRelEvent, peer->getPlatformScaleFactor()),
+-                            ModifierKeys::currentModifiers, MouseInputSource::defaultPressure, MouseInputSource::defaultOrientation, getEventTime (buttonRelEvent));
++    peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (pt, *peer),
++                            ModifierKeys::getCurrentModifiers(), MouseInputSource::defaultPressure, MouseInputSource::defaultOrientation, getEventTime (time));
+ }
+ 
+-void XWindowSystem::handleMotionNotifyEvent (LinuxComponentPeer* peer, const XPointerMovedEvent& movedEvent) const
++void XWindowSystem::handleButtonReleaseEvent (LinuxComponentPeer* peer, const XButtonPressedEvent& buttonPressEvent) const
++{
++    handleButtonReleaseEvent (peer, (int) buttonPressEvent.state, (int) buttonPressEvent.button, buttonPressEvent.time,
++                              Point { buttonPressEvent.x, buttonPressEvent.y }.toDouble());
++}
++
++void XWindowSystem::handleMotionNotifyEvent (LinuxComponentPeer* peer, int state, ::Time time, Point<double> pt) const
+ {
+-    updateKeyModifiers ((int) movedEvent.state);
++    updateKeyModifiers (state);
+     Keys::refreshStaleMouseKeys();
+ 
+     auto& dragState = dragAndDropStateMap[peer];
+@@ -3649,9 +3684,15 @@ void XWindowSystem::handleMotionNotifyEvent (LinuxComponentPeer* peer, const XPo
+     if (dragState.isDragging())
+         dragState.handleExternalDragMotionNotify();
+ 
+-    peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (movedEvent, peer->getPlatformScaleFactor()),
+-                            ModifierKeys::currentModifiers, MouseInputSource::defaultPressure,
+-                            MouseInputSource::defaultOrientation, getEventTime (movedEvent));
++    peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (pt, *peer),
++                            ModifierKeys::getCurrentModifiers(), MouseInputSource::defaultPressure,
++                            MouseInputSource::defaultOrientation, getEventTime (time));
++}
++
++void XWindowSystem::handleMotionNotifyEvent (LinuxComponentPeer* peer, const XPointerMovedEvent& movedEvent) const
++{
++    handleMotionNotifyEvent (peer, (int) movedEvent.state, movedEvent.time,
++                             Point { movedEvent.x, movedEvent.y }.toDouble());
+ }
+ 
+ void XWindowSystem::handleEnterNotifyEvent (LinuxComponentPeer* peer, const XEnterWindowEvent& enterEvent) const
+@@ -3659,12 +3700,12 @@ void XWindowSystem::handleEnterNotifyEvent (LinuxComponentPeer* peer, const XEnt
+     if (peer->getParentWindow() != 0)
+         peer->updateWindowBounds();
+ 
+-    if (! ModifierKeys::currentModifiers.isAnyMouseButtonDown())
++    if (! ModifierKeys::getCurrentModifiers().isAnyMouseButtonDown())
+     {
+         updateKeyModifiers ((int) enterEvent.state);
+-        peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (enterEvent, peer->getPlatformScaleFactor()),
+-                                ModifierKeys::currentModifiers, MouseInputSource::defaultPressure,
+-                                MouseInputSource::defaultOrientation, getEventTime (enterEvent));
++        peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (Point { enterEvent.x, enterEvent.y }, *peer),
++                                ModifierKeys::getCurrentModifiers(), MouseInputSource::defaultPressure,
++                                MouseInputSource::defaultOrientation, getEventTime (enterEvent.time));
+     }
+ }
+ 
+@@ -3673,13 +3714,13 @@ void XWindowSystem::handleLeaveNotifyEvent (LinuxComponentPeer* peer, const XLea
+     // Suppress the normal leave if we've got a pointer grab, or if
+     // it's a bogus one caused by clicking a mouse button when running
+     // in a Window manager
+-    if (((! ModifierKeys::currentModifiers.isAnyMouseButtonDown()) && leaveEvent.mode == NotifyNormal)
++    if (((! ModifierKeys::getCurrentModifiers().isAnyMouseButtonDown()) && leaveEvent.mode == NotifyNormal)
+          || leaveEvent.mode == NotifyUngrab)
+     {
+         updateKeyModifiers ((int) leaveEvent.state);
+-        peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (leaveEvent, peer->getPlatformScaleFactor()),
+-                                ModifierKeys::currentModifiers, MouseInputSource::defaultPressure,
+-                                MouseInputSource::defaultOrientation, getEventTime (leaveEvent));
++        peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, getLogicalMousePos (Point { leaveEvent.x, leaveEvent.y }, *peer),
++                                ModifierKeys::getCurrentModifiers(), MouseInputSource::defaultPressure,
++                                MouseInputSource::defaultOrientation, getEventTime (leaveEvent.time));
+     }
+ }
+ 
+@@ -3927,6 +3968,7 @@ void XWindowSystem::handleXEmbedMessage (LinuxComponentPeer* peer, XClientMessag
+     }
+ }
+ 
++
+ //==============================================================================
+ void XWindowSystem::dismissBlockingModals (LinuxComponentPeer* peer, const XConfigureEvent& configure) const
+ {
+@@ -3941,13 +3983,18 @@ void XWindowSystem::dismissBlockingModals (LinuxComponentPeer* peer, const XConf
+ 
+ void XWindowSystem::windowMessageReceive (XEvent& event)
+ {
++   #if JUCE_USE_XINPUT
++    if (getInstance()->handleXInputEvent (event))
++        return;
++   #endif
++
+     if (event.xany.window != None)
+     {
+        #if JUCE_X11_SUPPORTS_XEMBED
+         if (! juce_handleXEmbedEvent (nullptr, &event))
+        #endif
+         {
+-            auto* instance = XWindowSystem::getInstance();
++            auto* instance = getInstance();
+ 
+             if (auto* xSettings = instance->getXSettings())
+             {
+@@ -3964,7 +4011,7 @@ void XWindowSystem::windowMessageReceive (XEvent& event)
+ 
+             if (auto* peer = dynamic_cast<LinuxComponentPeer*> (getPeerFor (event.xany.window)))
+             {
+-                XWindowSystem::getInstance()->handleWindowMessage (peer, event);
++                instance->handleWindowMessage (peer, event);
+                 return;
+             }
+ 
+diff --git a/modules/juce_gui_basics/native/juce_XWindowSystem_linux.h b/modules/juce_gui_basics/native/juce_XWindowSystem_linux.h
+index 30af0747a..9695718b2 100644
+--- a/modules/juce_gui_basics/native/juce_XWindowSystem_linux.h
++++ b/modules/juce_gui_basics/native/juce_XWindowSystem_linux.h
+@@ -23,6 +23,12 @@
+   ==============================================================================
+ */
+ 
++#if JUCE_USE_XINPUT
++ // Also required when this native header is included directly by a module.
++ // If you're missing this header, install the libxi-dev package.
++ #include <X11/extensions/XInput2.h>
++#endif
++
+ namespace juce
+ {
+ 
+@@ -172,7 +178,7 @@ class XWindowSystem  : public DeletedAtShutdown
+ {
+ public:
+     //==============================================================================
+-    ::Window createWindow (::Window parentWindow, LinuxComponentPeer*) const;
++    ::Window createWindow (::Window parentWindow, LinuxComponentPeer*);
+     void destroyWindow    (::Window);
+ 
+     void setTitle (::Window, const String&) const;
+@@ -200,6 +206,7 @@ public:
+ 
+     bool canUseSemiTransparentWindows() const;
+     bool canUseARGBImages() const;
++    bool canUseMultiTouch() const;
+     bool isDarkModeActive() const;
+ 
+     int getNumPaintsPendingForWindow (::Window);
+@@ -306,10 +313,13 @@ private:
+     //==============================================================================
+     void handleKeyPressEvent        (LinuxComponentPeer*, XKeyEvent&) const;
+     void handleKeyReleaseEvent      (LinuxComponentPeer*, const XKeyEvent&) const;
+-    void handleWheelEvent           (LinuxComponentPeer*, const XButtonPressedEvent&, float) const;
+-    void handleButtonPressEvent     (LinuxComponentPeer*, const XButtonPressedEvent&, int) const;
++    void handleWheelEvent           (LinuxComponentPeer*, int64, Point<float>, float) const;
++    void handleButtonPressEvent     (LinuxComponentPeer*, int64, Point<float>, int) const;
++    void handleButtonPressEvent     (LinuxComponentPeer*, int, int, ::Time, Point<double>) const;
+     void handleButtonPressEvent     (LinuxComponentPeer*, const XButtonPressedEvent&) const;
++    void handleButtonReleaseEvent   (LinuxComponentPeer*, int, int, ::Time, Point<double>) const;
+     void handleButtonReleaseEvent   (LinuxComponentPeer*, const XButtonReleasedEvent&) const;
++    void handleMotionNotifyEvent    (LinuxComponentPeer*, int, ::Time, Point<double>) const;
+     void handleMotionNotifyEvent    (LinuxComponentPeer*, const XPointerMovedEvent&) const;
+     void handleEnterNotifyEvent     (LinuxComponentPeer*, const XEnterWindowEvent&) const;
+     void handleLeaveNotifyEvent     (LinuxComponentPeer*, const XLeaveWindowEvent&) const;
+@@ -323,6 +333,12 @@ private:
+     void handleClientMessageEvent   (LinuxComponentPeer*, XClientMessageEvent&, XEvent&) const;
+     void handleXEmbedMessage        (LinuxComponentPeer*, XClientMessageEvent&) const;
+ 
++   #if JUCE_USE_XINPUT
++    bool handleXInputEvent (XEvent&) const;
++    void handleXIDeviceEvent        (LinuxComponentPeer*, int, XIDeviceEvent&) const;
++    void updateXInputDevices        () const;
++   #endif
++
+     void dismissBlockingModals      (LinuxComponentPeer*) const;
+     void dismissBlockingModals      (LinuxComponentPeer*, const XConfigureEvent&) const;
+     void updateConstraints          (::Window, ComponentPeer&) const;
+@@ -331,9 +347,15 @@ private:
+ 
+     static void windowMessageReceive (XEvent&);
+ 
++   #if JUCE_UNIT_TESTS
++    friend struct LinuxTouchTestAccess;
++   #endif
++
+     //==============================================================================
+     bool xIsAvailable = false;
+ 
++    std::vector<::Window> windowHandles;
++
+     XWindowSystemUtilities::Atoms atoms;
+     ::Display* display = nullptr;
+     std::unique_ptr<DisplayVisuals> displayVisuals;
+diff --git a/modules/juce_gui_basics/native/juce_XInput_linux.h b/modules/juce_gui_basics/native/juce_XInput_linux.h
+new file mode 100644
+index 000000000..c2575c900
+--- /dev/null
++++ b/modules/juce_gui_basics/native/juce_XInput_linux.h
+@@ -0,0 +1,30 @@
++/*
++  ==============================================================================
++
++   This file is part of the JUCE 9 preview.
++   Copyright (c) Raw Material Software Limited
++
++   You may use this code under the terms of the AGPLv3
++   (see www.gnu.org/licenses).
++
++   For the JUCE 9 preview this file cannot be licensed commercially.
++
++   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
++   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
++   DISCLAIMED.
++
++  ==============================================================================
++*/
++
++// Internal declarations for the Linux XInput backport.
++
++#pragma once
++
++#if JUCE_USE_XINPUT
++namespace juce::XInputHelpers
++{
++    std::optional<int> setupXI2 (::Display*);
++    void registerForXI2Events (::Display*, ::Window);
++    void deleteAllTouchesForPeer (ComponentPeer*);
++}
++#endif
+diff --git a/modules/juce_gui_basics/native/juce_XInput_linux.cpp b/modules/juce_gui_basics/native/juce_XInput_linux.cpp
+new file mode 100644
+index 000000000..2c373f7ab
+--- /dev/null
++++ b/modules/juce_gui_basics/native/juce_XInput_linux.cpp
+@@ -0,0 +1,294 @@
++/*
++  ==============================================================================
++
++   This file is part of the JUCE 9 preview.
++   Copyright (c) Raw Material Software Limited
++
++   You may use this code under the terms of the AGPLv3
++   (see www.gnu.org/licenses).
++
++   For the JUCE 9 preview this file cannot be licensed commercially.
++
++   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
++   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
++   DISCLAIMED.
++
++  ==============================================================================
++*/
++
++// Backported from JUCE 032a1f433b and 55b2f9cf66. Included by juce_gui_basics.cpp.
++
++namespace juce
++{
++
++//=============================== X11 - XInput =================================
++#if JUCE_USE_XINPUT
++ namespace XInputHelpers
++ {
++     static MultiTouchMapper<int> currentTouches;
++
++     void deleteAllTouchesForPeer (ComponentPeer* peer)
++     {
++         currentTouches.deleteAllTouchesForPeer (peer);
++     }
++
++     std::optional<int> setupXI2 (::Display* display)
++     {
++         if (display == nullptr)
++             return {};
++
++         static const auto result = std::invoke ([display]() -> std::optional<int>
++         {
++             int xinputOpcode, first_event, first_error;
++             if (! X11Symbols::getInstance()->xQueryExtension (display, "XInputExtension", &xinputOpcode, &first_event, &first_error))
++                 return {};
++
++             int major = 2, minor = 2;
++             if (X11Symbols::getInstance()->xiQueryVersion (display, &major, &minor) != Success)
++                return {};
++
++             if (std::tuple (major, minor) < std::tuple (2, 2))
++                 return {};
++
++             unsigned char maskData[XIMaskLen (XI_LASTEVENT)] = {};
++             XISetMask (maskData, XI_HierarchyChanged);
++
++             XIEventMask eventMask;
++             eventMask.deviceid = XIAllDevices;
++             eventMask.mask_len = sizeof (maskData);
++             eventMask.mask = maskData;
++
++             X11Symbols::getInstance()->xiSelectEvents (display,
++                                                        X11Symbols::getInstance()->xDefaultRootWindow (display),
++                                                        &eventMask,
++                                                        1);
++             X11Symbols::getInstance()->xFlush (display);
++
++             return xinputOpcode;
++         });
++
++         return result;
++     }
++
++     void registerForXI2Events (::Display* display, ::Window windowH)
++     {
++         if (! setupXI2 (display))
++             return;
++
++         const auto shouldHandleMouseClicks = std::invoke ([windowH]
++         {
++             if (auto* peer = getPeerFor (windowH))
++                 return (peer->getStyleFlags() & ComponentPeer::windowIgnoresMouseClicks) == 0;
++
++             return true;
++         });
++
++         int numDevices = 0;
++         auto* info = X11Symbols::getInstance()->xiQueryDevice (display, XIAllDevices, &numDevices);
++
++         if (info == nullptr)
++             return;
++
++         const ScopeGuard scope { [info] { X11Symbols::getInstance()->xiFreeDeviceInfo (info); } };
++
++         for (int i = 0; i < numDevices; ++i)
++         {
++             const auto& deviceInfo = info[i];
++             if (deviceInfo.use != XISlavePointer)
++                continue;
++
++             unsigned char maskData[XIMaskLen (XI_LASTEVENT)] = {};
++
++             if (shouldHandleMouseClicks)
++             {
++                 const auto isTouchCapable = std::any_of (deviceInfo.classes,
++                                                          deviceInfo.classes + deviceInfo.num_classes,
++                                                          [] (const auto& x) { return x->type == XITouchClass; });
++
++                 if (isTouchCapable)
++                 {
++                    XISetMask (maskData, XI_TouchBegin);
++                    XISetMask (maskData, XI_TouchUpdate);
++                    XISetMask (maskData, XI_TouchEnd);
++                 }
++             }
++
++             const auto isButtonCapable = std::any_of (deviceInfo.classes,
++                                                       deviceInfo.classes + deviceInfo.num_classes,
++                                                       [] (const auto& x) { return x->type == XIButtonClass; });
++
++             if (isButtonCapable)
++             {
++                 XISetMask (maskData, XI_Motion);
++
++                 if (shouldHandleMouseClicks)
++                 {
++                    XISetMask (maskData, XI_ButtonPress);
++                    XISetMask (maskData, XI_ButtonRelease);
++                 }
++             }
++
++             XIEventMask eventMask;
++             eventMask.deviceid = deviceInfo.deviceid;
++             eventMask.mask_len = sizeof (maskData);
++             eventMask.mask = maskData;
++
++             X11Symbols::getInstance()->xiSelectEvents (display,
++                                                        windowH,
++                                                        &eventMask,
++                                                        1);
++         }
++
++         X11Symbols::getInstance()->xFlush (display);
++     }
++ }
++#endif
++
++#if JUCE_USE_XINPUT
++void XWindowSystem::handleXIDeviceEvent (LinuxComponentPeer* peer, int eventType, XIDeviceEvent& deviceEvent) const
++{
++    const Point eventPos { deviceEvent.event_x, deviceEvent.event_y };
++
++    switch (eventType)
++    {
++        case XI_ButtonPress:
++        {
++            handleButtonPressEvent (peer,
++                                    deviceEvent.mods.effective,
++                                    deviceEvent.detail,
++                                    deviceEvent.time,
++                                    eventPos);
++            return;
++        }
++        case XI_ButtonRelease:
++        {
++            handleButtonReleaseEvent (peer,
++                                      deviceEvent.mods.effective,
++                                      deviceEvent.detail,
++                                      deviceEvent.time,
++                                      eventPos);
++            return;
++        }
++        case XI_Motion:
++        {
++            handleMotionNotifyEvent (peer,
++                                     deviceEvent.mods.effective,
++                                     deviceEvent.time,
++                                     eventPos);
++            return;
++        }
++    }
++
++    updateKeyModifiers (deviceEvent.mods.effective);
++    const auto keyboardMods = ModifierKeys::getCurrentModifiers().withoutMouseButtons();
++
++    const auto touchIndex = XInputHelpers::currentTouches.getIndexOfTouch (peer, deviceEvent.detail);
++    const auto touchPos = getLogicalMousePos (eventPos, *peer);
++    const auto time = getEventTime (deviceEvent.time);
++
++    const auto sendTouchEvent = [peer, time, touchIndex] (Point<float> pos, ModifierKeys mods)
++    {
++        peer->handleMouseEvent (MouseInputSource::InputSourceType::touch,
++                                pos,
++                                mods,
++                                MouseInputSource::defaultPressure,
++                                MouseInputSource::defaultOrientation,
++                                time,
++                                {},
++                                touchIndex);
++
++        // In case this component was deleted by the event
++        return ComponentPeer::isValidPeer (peer);
++    };
++
++    switch (eventType)
++    {
++        case XI_TouchBegin:
++        {
++            // This forces a mouse-enter/up event, in case we didn't get one before.
++            if (! sendTouchEvent (touchPos, keyboardMods))
++                return;
++
++            break;
++        }
++        case XI_TouchEnd:
++        {
++            XInputHelpers::currentTouches.clearTouch (touchIndex);
++            break;
++        }
++    }
++
++    const auto mouseKeys = eventType == XI_TouchEnd ? keyboardMods
++                                                  : keyboardMods.withFlags (ModifierKeys::leftButtonModifier);
++    if (! sendTouchEvent (touchPos, mouseKeys))
++        return;
++
++    if (eventType == XI_TouchEnd)
++        sendTouchEvent (MouseInputSource::offscreenMousePos, keyboardMods);
++}
++
++void XWindowSystem::updateXInputDevices() const
++{
++    for (auto wh : windowHandles)
++        XInputHelpers::registerForXI2Events (display, wh);
++}
++#endif
++
++#if JUCE_USE_XINPUT
++bool XWindowSystem::handleXInputEvent (XEvent& event) const
++{
++    if (auto* xDisplay = getDisplay();
++        const auto xInputOpcode = XInputHelpers::setupXI2 (xDisplay))
++    {
++        // We need to collect and process these mouse events via XInput so that
++        // it is possible to detect, and then ignore (via XISlavePointer),
++        // emulated mouse events when a touch device is connected.
++        switch (event.xany.type)
++        {
++            case ButtonPress:
++            case ButtonRelease:
++            case MotionNotify:
++                return true;
++        }
++
++        if (event.xcookie.type == GenericEvent && event.xcookie.extension == xInputOpcode)
++        {
++
++            // You can only call xGetEventData once per event, even if you free the data afterwards
++            if (! X11Symbols::getInstance()->xGetEventData (xDisplay, &event.xcookie))
++                return true;
++
++            const ScopeGuard scope { [xDisplay, &event] { X11Symbols::getInstance()->xFreeEventData (xDisplay, &event.xcookie); }};
++
++            switch (event.xcookie.evtype)
++            {
++                case XI_HierarchyChanged:
++                    updateXInputDevices();
++                    break;
++
++                case XI_ButtonPress:
++                case XI_ButtonRelease:
++                case XI_Motion:
++                case XI_TouchBegin:
++                case XI_TouchEnd:
++                case XI_TouchUpdate:
++                    if (auto* deviceEvent = (XIDeviceEvent*) event.xcookie.data;
++                        auto* peer = dynamic_cast<LinuxComponentPeer*> (getPeerFor (deviceEvent->event)))
++                        handleXIDeviceEvent (peer, event.xcookie.evtype, *deviceEvent);
++
++                    break;
++
++                default:
++                    // Unhandled event type
++                    jassertfalse;
++                    break;
++            }
++
++            return true;
++        }
++    }
++    return false;
++}
++#endif
++
++} // namespace juce
