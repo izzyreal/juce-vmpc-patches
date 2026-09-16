@@ -29,7 +29,8 @@ for PATCH in \
     "raw_keyboard_macos.patch" \
     "raw_keyboard_macos_mod_synthesis.patch" \
     "android_safe_area.patch" \
-    "linux_touch.patch"
+    "linux_touch.patch" \
+    "jack4all.patch"
 do
     if [ ! -f "$PATCH_PATH/$PATCH" ]; then
         echo "Error: Patch '$PATCH' not found."
